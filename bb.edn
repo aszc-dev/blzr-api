@@ -1,0 +1,7 @@
+{:paths ["src" "resources"]
+ :pods {org.babashka/go-sqlite3 {:version "0.1.0"}}
+ :tasks
+ {server  {:doc  "Start the API server"
+           :task (exec 'server/-main)}
+  migrate {:doc  "Run database migrations"
+           :task (exec 'db/migrate!)}}}
