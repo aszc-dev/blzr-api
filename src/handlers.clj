@@ -119,9 +119,9 @@
         (transit-write {:id         (:id row)
                         :name       (:name row)
                         :source     (:source row)
-                        :node-count (:node_count row)
-                        :edge-count (:edge_count row)
-                        :created-at (:created_at row)}))
+                        :node-count (:node-count row)
+                        :edge-count (:edge-count row)
+                        :created-at (:created-at row)}))
       (json-response 404 "{\"error\":\"not found\"}"))))
 
 (defn find-by-structure
