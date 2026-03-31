@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Babashka
+        uses: DeLaGuardo/setup-clojure@12.5
+        with:
+          bb: latest
+
+      - name: Start server and run smoke tests
+        run: |
+          DB_PATH=/tmp/test-blzr-data.edn PORT=4001 bb server &
+          sleep 3
+
+          echo "=== Health ==="
+          curl -sf http://localhost:4001/health
+
+          echo "=== POST patch ==="
+          BODY=$(bb -e '
+            (require (quote [cognitect.transit :as t]))
+            (import (java.io ByteArrayOutputStream))
+            (let [out (ByteArrayOutputStream.)
+                  w   (t/writer out :json)]
+              (t/write w {:version 1
+                          :structure {:nodes {"n1" {:type :osc} "n2" {:type :out}}
+                                      :edges [{:source "n1" :sourceHandle "audio-out"
+                                               :target "n2" :targetHandle "audio-in"}]}
+                          :params {"n1" {:frequency 440}}
+                          :positions {"n1" {:x 0 :y 0} "n2" {:x 200 :y 0}}
+                          :module-ui {:by-id {}}
+                          :metadata {:source :user :name "CI Test"}})
+              (print (.toString out "UTF-8")))')
+
+          RESP=$(curl -sf -X POST http://localhost:4001/api/patches \
+            -H "Content-Type: application/transit+json" \
+            -d "$BODY")
+          echo "$RESP"
+
+          # Extract ID and verify GET
+          ID=$(echo "$RESP" | sed 's/.*"~:id","\([^"]*\)".*/\1/')
+          echo "=== GET patch $ID ==="
+          curl -sf "http://localhost:4001/api/patches/$ID" | head -c 100
+          echo ""
+
+          echo "=== GET meta ==="
+          curl -sf "http://localhost:4001/api/patches/$ID/meta" | head -c 200
+          echo ""
+
+          echo "=== Dedup ==="
+          RESP2=$(curl -sf -X POST http://localhost:4001/api/patches \
+            -H "Content-Type: application/transit+json" \
+            -d "$BODY")
+          echo "$RESP2" | grep -q "deduplicated" && echo "Dedup OK" || (echo "Dedup FAILED" && exit 1)
+
+          echo "=== 404 ==="
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:4001/api/patches/nonexistent)
+          [ "$HTTP_CODE" = "404" ] && echo "404 OK" || (echo "Expected 404, got $HTTP_CODE" && exit 1)
+
+          kill %1
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Coolify
+        run: |
+          curl -sf -X GET \
+            "${{ secrets.COOLIFY_ADDRESS }}/api/v1/deploy?uuid=${{ secrets.COOLIFY_APP_UUID }}" \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_KEY }}"
