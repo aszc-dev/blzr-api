@@ -142,6 +142,8 @@
         s-hash   (structure-hash struct)
         p-hash   (params-hash params)
         f-hash   (full-hash struct params)
+        metadata (get desc :metadata)
+        source   (or (:source data) (or (:source metadata) :user))
         patch-id (or (:id (db/find-by-full-hash db-path f-hash))
                      (let [pid (id/generate)]
                        (db/insert-patch! db-path
@@ -150,7 +152,8 @@
                           :params-hash    p-hash
                           :full-hash      f-hash
                           :descriptor     (transit-write desc)
-                          :source         :user
+                          :name           (or (:name data) (:name metadata))
+                          :source         source
                           :node-count     (count (:nodes struct))
                           :edge-count     (count (:edges struct))})
                        pid))
@@ -161,7 +164,7 @@
        :name         (:name data)
        :category     (:category data)
        :library-desc (:library-desc data)
-       :source       :user})
+       :source       source})
     (json-response 201
       (transit-write {:id mod-id :patch-id patch-id}))))
 
